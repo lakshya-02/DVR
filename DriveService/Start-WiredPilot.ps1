@@ -90,6 +90,17 @@ try {
         $createdReverse = $true
     }
 
+    $running = $null
+    try {
+        $running = Invoke-RestMethod -Uri "$pilotOrigin/health" -TimeoutSec 2 -ErrorAction Stop
+    } catch {
+        # The first launch starts the service below.
+    }
+    if ($running.ok -and $running.mode -eq 'wired-pilot') {
+        $createdReverse = $false
+        Write-Output "DVR companion is connected over USB. Pair at $pilotOrigin/pair"
+        return
+    }
     & $node.Source "--env-file=$pilotConfig" server.mjs --wired-pilot
     if ($LASTEXITCODE -ne 0) { throw 'The DVR companion did not start. Check whether port 48180 is available.' }
 }
