@@ -1,21 +1,39 @@
-# DVR projection room Â· Quest 3 checkpoint
+# DVR · Quest 3 checkpoint
 
-## Build
+## Current build
 
-The sideloaded development APK was built from implementation revision `8158da1` on `feature/projection-room`. Its size is 159,139,445 bytes and its SHA-256 is `95FA750D19AA6997DA0FD3A4E6790291715CAB36BDE137892BC6EFEB4A79315A`. Revision `f6c3658` improves restarting the Windows companion without rebuilding the APK. See [AGENTS.md](AGENTS.md) for rebuild and diagnostic commands and [MEDIA.md](MEDIA.md) for the film licenses and broadcaster sources.
+Implementation revision `f088259`, 19 November 2026. Open this repository directly in Unity 6000.3.19f1. [Build and test commands](AGENTS.md) · [Drive setup](DriveService/README.md) · [Security boundaries](SECURITY.md)
 
-## Implemented
+| Edition | Private Drive connection | APK size | SHA-256 |
+| --- | --- | ---: | --- |
+| Installed wired pilot | Trusted development headset and PC, USB | 164,157,951 | `19CA4FED1A7A9964CD4BF6D753E539347522E6F746EDAAC7247F23A070D70A59` |
+| Default Android build | Requires a configured HTTPS companion for Drive | 130,395,997 | `5F837C6E26ACD57A610E14B470E132273FB77034041CF6B2C4C7D763FDB29AE4` |
 
-- [x] Metal deck, six illustrated physical discs, individual cradles, one-disc loading, haptic feedback and ejection. Movie discs autoplay. Live collections open a channel picker.
-- [x] 3 m Lounge and 4 m Theater screen widths in passthrough, smoked controls, screen positioning, recenter, adjustable volume, and movie pause/seek. The Unity splash is disabled.
-- [x] Bundled animation, an English-language feature, and two choices each on Sports, Indian TV and News.
-- [x] Live Android video is copied on the GPU into a Unity texture. The native bridge counts new images actually copied onto the picture surface. The previous build counted frames decoded into a separate compositor layer.
-- [x] Private Google Drive pairing, filename search, paging, authenticated range playback and disconnect. The Windows USB pilot is configured on the development PC. The testing account granted Google read-only consent and the companion confirmed pairing. Public HTTPS deployment instructions are in [DriveService](DriveService/README.md).
-- [x] Both subscription shortcuts launched their respective official HTTPS destinations in Quest Browser. The providers own login, entitlements and playback.
+## What changed after the wearer test
+
+The wearer approved the DVD models, cinema picture and playback quality. Their table obscured transport controls, the eject label was hard to see, and the Personal disc had no account identity or folder view.
+
+- [x] Placement follows the viewer's eye height and horizontal heading on entry and recenter. A two-row floating panel brings transport and a red Eject button below the picture. Either controller ray can select a disc or eject it. Either thumbstick can adjust deck height or screen position.
+- [x] Atkinson Hyperlegible Regular and Bold, a translucent transport background and a distinct account badge with the official Google Drive mark. The layout was authored in Unity. Figma's connector was unavailable.
+- [x] Personal opens to folder sources and displays the Google account name and email. Users can browse My Drive, shared items and shared drives, search for a folder by name, follow folder shortcuts, page and return to the parent.
+- [x] The repository root contains Assets, Packages, ProjectSettings and the agent handoff. Native and companion scripts resolve the project from this layout.
+
+## Verification
+
+- The installed wired APK completed **46 Quest checks with zero failures**, including two simulated controller-ray origins, load and eject through the Meta event path, transport placement relative to the theater screen, both films, all six live sources, pause, seek, volume, and left/right-eye captures of the public demo. Guardian stayed enabled. Proximity sensing was restored.
+- The existing pairing survived an app update and cold launch. The headset obtained identity from the real Google account, opened My Drive, searched across Drive, found the requested folder and opened its contents. No MP4 or WebM appeared directly inside the matched folder. The wearer chose to check private playback and seeking personally.
+- Eight mocked companion tests passed. The dependency lockfile audit reported zero known npm advisories. The defensive review covered account and folder authorization, callback and redirect handling, logging, build flags, credential storage, rate limits and Git exclusions. Both editions cold-launched on the Quest. The USB pilot was reinstalled for the wearer. The regular APK manifest omits the debuggable flag. Its managed metadata omits the one-use diagnostic marker. The pilot requires that marker for intent-driven checks.
+- Separate provider handoff tests in the preceding build reached the official Netflix and Prime Video players. Their subscription and entitlement flows belong to the providers.
+
+## Resume here
+
+1. **Wearer check.** In the usual seat, press X, use Discs and Eject from the floating panel, and confirm table clearance and text size. Use Deck height to adjust the physical model if needed.
+2. **Private media.** Open Personal, check the account badge, open the desired subfolder and choose a movie. Use Show controls to pause or skip ten seconds. Keep the companion running and the trusted USB cable connected. Google testing grants can expire after seven days.
+3. **Untethered Drive.** Configure a stable HTTPS service and Google redirect URI before distributing an edition with private Drive enabled. The wired pilot has no hosted service or subscription cost of its own.
 
 ## Device evidence Â· 19 November 2026
 
-The final automated probe on Quest 3 reported **41 passes, zero failures**. It exercised the Meta pointer-event path. The samples below count advancing video frames on the projection surface. Network conditions and broadcaster scheduling can affect later runs.
+The earlier automated probe on Quest 3 reported **41 passes, zero failures**. It exercised the Meta pointer-event path. The samples below count advancing video frames on the projection surface. Network conditions and broadcaster scheduling can affect later runs.
 
 | Disc or channel | Frames over approximately 1.25 seconds |
 | --- | --- |
@@ -31,9 +49,3 @@ The final automated probe on Quest 3 reported **41 passes, zero failures**. It e
 Separate left-eye and right-eye screenshots contain the film projected in the scene. The probe verified passthrough, insertion with an occupied tray, an unavailable stream, switching channels, ejection during loading and playback, end-of-film recovery, pause, seek, volume, recentering and switching screen sizes. Guardian and proximity sensing were restored after bench testing.
 
 Six mocked Drive integration tests passed. They cover Google OAuth, paging and search, range requests, access revocation, and the development-only USB loopback restriction. The connected headset separately initiated a real pairing, and its PC companion completed the Google consent callback. Credentials, pairing codes, private movie titles and room imagery are excluded from the source handoff.
-
-## Resume here
-
-1. Record the wearer's assessment of picture and sound, seated reach, the side panel and screen placement.
-2. With the USB companion running, insert Personal and verify a private movie plays and seeks from the real Drive account. Keep release notes free of private titles. A seven-day Google testing grant or a changed USB connection may require reconnection.
-3. Provider account playback is a wearer check in each official player. For untethered private Drive playback, configure a stable HTTPS endpoint and register its callback before building that edition.

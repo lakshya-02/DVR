@@ -151,3 +151,5 @@ crashlytics-build.properties
 !.env.example
 client_secret*.json
 /Assets/SceneDependencyCache*
+/Assets/StreamingAssets/RuntimeActionBindings.json
+/Assets/StreamingAssets/RuntimeActionBindings.json.meta
