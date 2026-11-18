@@ -21,15 +21,15 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
 
-public static class DvrBuild
+public static partial class DvrBuild
 {
     private const string Root = "Assets/DVR";
     private const string ScenePath = Root + "/DVR.unity";
-    private static readonly Color Ink = Hex(0x111C24);
-    private static readonly Color Case = Hex(0x263943);
-    private static readonly Color Paper = Hex(0xFFF0D4);
-    private static readonly Color Amber = Hex(0xF2AE67);
-    private static readonly Color Mint = Hex(0x9BDFC7);
+    private static readonly Color Ink = Hex(0x191515);
+    private static readonly Color Case = Hex(0x44312C);
+    private static readonly Color Paper = Hex(0xF5E0BD);
+    private static readonly Color Amber = Hex(0xD99550);
+    private static readonly Color Mint = Hex(0x96E1B5);
 
     [MenuItem("DVR/Rebuild prototype scene")]
     public static void Assemble()
@@ -52,108 +52,9 @@ public static class DvrBuild
         }
 
         RenderSettings.skybox = null;
-        var station = Place("DVR station", null, Vector3.zero);
-        var matte = MaterialAsset("Cabinet", Case);
-        var dark = MaterialAsset("Trim", Ink);
-        var gold = MaterialAsset("Amber", Amber);
-        var mint = MaterialAsset("Mint", Mint);
-        var discMaterial = MaterialAsset("Disc", Paper);
-
-        var screen = Place("Television", station, new Vector3(-0.20f, -0.02f, 1.35f));
-        Box(screen, "Cabinet", Vector3.zero, new Vector3(0.96f, 0.59f, 0.12f), matte);
-        Box(screen, "Bezel", new Vector3(0, 0.022f, -0.063f), new Vector3(0.92f, 0.52f, 0.012f), dark);
-        Box(screen, "Power indicator", new Vector3(0.420f, -0.266f, -0.068f), new Vector3(0.013f, 0.01f, 0.006f), mint);
-        var pictureCanvas = MakeCanvas("Display", screen, rig.centerEyeAnchor.GetComponent<Camera>(),
-            new Vector3(0, 0.022f, -0.071f), new Vector2(896, 504), 0.001f);
-        ImageAt(pictureCanvas.transform, "Blank screen", 0, 0, 896, 504, Hex(0x03080A));
-        var picture = Ui<RawImage>(pictureCanvas.transform, "Live picture", 0, 0, 896, 504);
-        picture.raycastTarget = false;
-        var tv = screen.gameObject.AddComponent<Television>();
-        var tvProperties = new SerializedObject(tv);
-        Set(tvProperties, "picture", picture);
-        Set(tvProperties, "demoClip", AssetDatabase.LoadAssetAtPath<VideoClip>(Root + "/Media/OfflineDemo.mp4"));
-        tvProperties.ApplyModifiedPropertiesWithoutUndo();
-
-        var deck = Place("Disc player", station, new Vector3(0.02f, -0.35f, 0.56f));
-        Box(deck, "Cabinet", new Vector3(0, -0.03f, 0.045f), new Vector3(0.34f, 0.097f, 0.18f), matte);
-        Box(deck, "Face", new Vector3(0, -0.03f, -0.048f), new Vector3(0.32f, 0.08f, 0.01f), dark);
-        Box(deck, "Open tray", new Vector3(0.026f, -0.013f, -0.098f), new Vector3(0.164f, 0.012f, 0.102f), dark);
-        Box(deck, "Tray marker", new Vector3(0.026f, -0.003f, -0.151f), new Vector3(0.082f, 0.005f, 0.006f), gold);
-        var slot = Place("Tray socket", deck, new Vector3(0.026f, 0.001f, -0.081f));
-        var stand = Place("Disc stand", station, new Vector3(-0.26f, -0.33f, 0.43f));
-        Box(stand, "Stand foot", new Vector3(0, -0.086f, 0), new Vector3(0.16f, 0.022f, 0.12f), matte);
-        Box(stand, "Stand clip", new Vector3(0, -0.062f, 0), new Vector3(0.082f, 0.04f, 0.05f), dark);
-        var discHome = Place("Disc rest", stand, Vector3.zero);
-        discHome.localRotation = Quaternion.Euler(-64f, 0, 0);
-        var disc = Place("IPTV disc", station, Vector3.zero);
-        var discShell = Place("Disc surface", disc, Vector3.zero);
-        discShell.gameObject.AddComponent<MeshRenderer>().sharedMaterial = discMaterial;
-        discShell.gameObject.AddComponent<MeshFilter>().sharedMesh = DiscMesh();
-        var ring = Place("Disc accent", disc, new Vector3(0, 0.0033f, 0));
-        ring.gameObject.AddComponent<MeshRenderer>().sharedMaterial = gold;
-        ring.gameObject.AddComponent<MeshFilter>().sharedMesh = RingMesh("Disc Accent", 0.018f, 0.028f, 0.0004f);
-        var label = MakeCanvas("Disc print", disc, null, new Vector3(0, 0.004f, 0.036f),
-            new Vector2(104, 30), 0.00045f);
-        label.transform.localRotation = Quaternion.Euler(90f, 0, 0);
-        Label(label.transform, "IPTV", 0, 0, 104, 30, 25, Ink, TextAnchor.MiddleCenter);
-        var gripCollider = disc.gameObject.AddComponent<BoxCollider>();
-        gripCollider.size = new Vector3(0.14f, 0.022f, 0.14f);
-        disc.SetPositionAndRotation(discHome.position, discHome.rotation);
-        var grabInteractions = QuickActionsAPI.AddGrabInteraction(disc.gameObject).ToArray();
-        var rigidbody = disc.GetComponent<Rigidbody>();
-        var grabbable = disc.GetComponent<Grabbable>();
-        if (rigidbody == null || grabbable == null || grabInteractions.Length == 0)
-            throw new InvalidOperationException("Meta grab template did not configure the disc.");
-
-        var canvasCamera = rig.centerEyeAnchor.GetComponent<Camera>();
-        var controls = MakeCanvas("DVR controls", station, canvasCamera,
-            new Vector3(-0.20f, -0.36f, 1.25f), new Vector2(820, 106), 0.001f);
-        ImageAt(controls.transform, "Control backplate", 0, 0, 820, 106, Ink);
-        Label(controls.transform, "DVR", -297, 11, 170, 55, 44, Paper, TextAnchor.MiddleLeft);
-        var deckStatus = Label(controls.transform, "INSERT DISC", -89, 9, 234, 48, 26, Mint, TextAnchor.MiddleLeft);
-        Label(controls.transform, "Grip the disc and place it on the tray.", -175, -30, 415, 28, 20, Paper, TextAnchor.MiddleLeft);
-        var recenter = MakeButton(controls.transform, "Recenter", 283, 0, 204, 70);
-        QuickActionsAPI.AddRayCanvasInteraction(controls.gameObject);
-
-        var channels = MakeCanvas("Channel panel", station, canvasCamera,
-            new Vector3(0.54f, -0.01f, 1.29f), new Vector2(418, 558), 0.001f);
-        ImageAt(channels.transform, "Channel backplate", 0, 0, 418, 558, Ink);
-        ImageAt(channels.transform, "Header stripe", 0, 276, 418, 6, Amber);
-        Label(channels.transform, "IPTV DISC", 0, 213, 354, 50, 39, Paper, TextAnchor.MiddleLeft);
-        var status = Label(channels.transform, "Choose a live channel.", 0, 145, 354, 88, 25, Mint, TextAnchor.UpperLeft);
-        Button[] rows =
-        {
-            MakeButton(channels.transform, "Channel 1", 0, 59, 354, 62),
-            MakeButton(channels.transform, "Channel 2", 0, -13, 354, 62),
-            MakeButton(channels.transform, "Channel 3", 0, -85, 354, 62)
-        };
-        var demo = MakeButton(channels.transform, "Play offline demo", 0, -157, 354, 56);
-        var random = MakeButton(channels.transform, "Random channel", -69, -228, 216, 62);
-        var eject = MakeButton(channels.transform, "Eject", 118, -228, 118, 62);
-        QuickActionsAPI.AddRayCanvasInteraction(channels.gameObject);
-
-        var deckController = new GameObject("DVR session").AddComponent<DiscDeck>();
-        var fields = new SerializedObject(deckController);
-        Set(fields, "head", rig.centerEyeAnchor);
-        Set(fields, "station", station);
-        Set(fields, "stand", discHome);
-        Set(fields, "slot", slot);
-        Set(fields, "disc", rigidbody);
-        Set(fields, "grabbable", grabbable);
-        SetArray(fields, "grabInteractions", grabInteractions);
-        Set(fields, "channelPanel", channels.gameObject);
-        SetArray(fields, "rows", rows);
-        Set(fields, "randomButton", random);
-        Set(fields, "demoButton", demo);
-        Set(fields, "deckStatus", deckStatus);
-        Set(fields, "status", status);
-        Set(fields, "television", tv);
-        fields.ApplyModifiedPropertiesWithoutUndo();
-        UnityEventTools.AddPersistentListener(recenter.onClick, deckController.Recenter);
-        UnityEventTools.AddPersistentListener(eject.onClick, deckController.Eject);
-        UnityEventTools.AddPersistentListener(random.onClick, deckController.RandomChannel);
-        UnityEventTools.AddPersistentListener(demo.onClick, deckController.PlayDemo);
-        channels.gameObject.SetActive(false);
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = Hex(0x7D6C61);
+        BuildProjectionRoom(rig);
 
         ConfigureAndroid();
         EditorSceneManager.MarkSceneDirty(scene);
@@ -162,6 +63,12 @@ public static class DvrBuild
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
         AssetDatabase.SaveAssets();
         Debug.Log("[DVR] Prototype scene assembled");
+    }
+
+    public static void RebuildAndroid()
+    {
+        Assemble();
+        Android();
     }
 
     public static void Android()
@@ -188,6 +95,9 @@ public static class DvrBuild
     {
         ConfigureOpenXR();
         PlayerSettings.colorSpace = ColorSpace.Linear;
+        PlayerSettings.SplashScreen.show = false;
+        PlayerSettings.SplashScreen.showUnityLogo = false;
+        PlayerSettings.graphicsJobs = false;
         PlayerSettings.companyName = "Lakshya";
         PlayerSettings.productName = "DVR";
         PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.Android, "com.lakshya.dvr");
@@ -195,10 +105,11 @@ public static class DvrBuild
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;
         PlayerSettings.Android.forceInternetPermission = true;
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
         EditorUserBuildSettings.buildAppBundle = false;
         EditorUserBuildSettings.androidBuildSubtarget = MobileTextureSubtarget.ASTC;
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
-        PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { UnityEngine.Rendering.GraphicsDeviceType.Vulkan });
+        PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3 });
 
         var config = OVRProjectConfig.CachedProjectConfig;
         config.insightPassthroughSupport = OVRProjectConfig.FeatureSupport.Required;
@@ -299,8 +210,6 @@ public static class DvrBuild
         return material;
     }
 
-    private static Mesh DiscMesh() => RingMesh("Disc Mesh", 0.012f, 0.070f, 0.006f);
-
     private static Mesh RingMesh(string name, float inner, float outer, float thickness)
     {
         var path = $"{Root}/{name}.asset";
@@ -333,6 +242,10 @@ public static class DvrBuild
         }
 
         var mesh = new Mesh { name = name, vertices = vertices, triangles = triangles };
+        var uv = new Vector2[vertices.Length];
+        for (var i = 0; i < uv.Length; i++)
+            uv[i] = new Vector2(vertices[i].x, vertices[i].z) / (2f * outer) + Vector2.one * 0.5f;
+        mesh.uv = uv;
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
         AssetDatabase.CreateAsset(mesh, path);
@@ -390,10 +303,10 @@ public static class DvrBuild
         var button = image.gameObject.AddComponent<Button>();
         var colors = button.colors;
         colors.normalColor = Case;
-        colors.highlightedColor = Hex(0x3B5A63);
+        colors.highlightedColor = Hex(0x6F4F3B);
         colors.selectedColor = colors.highlightedColor;
-        colors.pressedColor = Hex(0x5B4434);
-        colors.disabledColor = Hex(0x283036);
+        colors.pressedColor = Hex(0x855634);
+        colors.disabledColor = Hex(0x302523);
         button.colors = colors;
         button.targetGraphic = image;
         var navigation = button.navigation;

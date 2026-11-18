@@ -16,6 +16,9 @@ namespace DVR
         private Action<string> report;
         private float deadline;
         private bool waiting;
+        private bool movie;
+        private float volume = 1f;
+        private Vector2 screenSize;
 #if UNITY_ANDROID && !UNITY_EDITOR
         private AndroidLiveVideo live;
         private bool livePicture;
@@ -46,23 +49,25 @@ namespace DVR
         private void Awake()
         {
             picture.enabled = false;
+            screenSize = picture.rectTransform.sizeDelta;
             videoTexture = new RenderTexture(1280, 720, 0, RenderTextureFormat.ARGB32);
             picture.texture = videoTexture;
         }
 
-        public void Play(string url, Action<string> onStatus)
+        public void Play(string url, Action<string> onStatus, bool movie = false, string bearer = null)
         {
-            StartPlayback(url, null, onStatus);
+            StartPlayback(url, null, onStatus, movie, bearer);
         }
 
         public void PlayDemo(Action<string> onStatus)
         {
-            if (demoClip != null) StartPlayback(null, demoClip, onStatus);
+            if (demoClip != null) StartPlayback(null, demoClip, onStatus, true, null);
         }
 
-        private void StartPlayback(string url, VideoClip clip, Action<string> onStatus)
+        private void StartPlayback(string url, VideoClip clip, Action<string> onStatus, bool isMovie, string bearer)
         {
             Stop();
+            movie = isMovie;
             report = onStatus;
             deadline = Time.realtimeSinceStartup + 20f;
             waiting = true;
@@ -73,9 +78,9 @@ namespace DVR
             {
                 try
                 {
-                    live = new AndroidLiveVideo(picture.rectTransform, url);
+                    live = new AndroidLiveVideo(url, bearer, isMovie);
                 }
-                catch (AndroidJavaException error)
+                catch (Exception error)
                 {
                     Fail("Channel unavailable. Try another.", error.Message);
                 }
@@ -84,11 +89,13 @@ namespace DVR
             }
 #endif
 
+            picture.texture = videoTexture;
             var session = new GameObject("Playback session");
             session.transform.SetParent(transform, false);
             audioOutput = session.AddComponent<AudioSource>();
             audioOutput.playOnAwake = false;
             audioOutput.mute = true;
+            audioOutput.volume = volume;
 
             player = session.AddComponent<VideoPlayer>();
             player.playOnAwake = false;
@@ -134,7 +141,7 @@ namespace DVR
 
         private void OnEnded(VideoPlayer source)
         {
-            if (source == player) Fail("Playback ended. Choose a channel.", "Playback ended");
+            if (source == player) Finish();
         }
 
         private void Update()
@@ -155,22 +162,70 @@ namespace DVR
                 return;
             }
 
+            if (live.Ended) { Finish(); return; }
+
             try
             {
                 live.Update();
                 if (!waiting || !live.HasFrame) return;
 
-                live.Reveal();
+                picture.texture = live.Texture;
+                float aspect = live.Aspect;
+                picture.rectTransform.sizeDelta = new Vector2(Mathf.Min(screenSize.x, screenSize.y * aspect),
+                    Mathf.Min(screenSize.y, screenSize.x / aspect));
+                picture.enabled = true;
+                live.SetVolume(volume);
+                Debug.Log($"[DVR] Android picture on projection screen {live.Texture.width}x{live.Texture.height}");
                 livePicture = true;
                 waiting = false;
                 report?.Invoke("Playing");
             }
-            catch (AndroidJavaException error)
+            catch (Exception error)
             {
                 Fail("Channel unavailable. Try another.", error.Message);
             }
         }
 #endif
+
+        private void Finish()
+        {
+            var callback = report;
+            Stop();
+            callback?.Invoke(movie ? "Film ended. Play again or eject." : "Stream ended. Retry or choose another.");
+        }
+
+        public void TogglePause()
+        {
+            if (!movie || !HasPicture) return;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (live != null)
+            {
+                live.TogglePause();
+                report?.Invoke(live.Paused ? "Paused" : "Playing");
+                return;
+            }
+#endif
+            if (player.isPlaying) { player.Pause(); report?.Invoke("Paused"); }
+            else { player.Play(); report?.Invoke("Playing"); }
+        }
+
+        public void SeekRelative(float seconds)
+        {
+            if (!movie || !HasPicture) return;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (live != null) { live.Seek(seconds); return; }
+#endif
+            if (player.canSetTime) player.time = Math.Max(0, Math.Min(player.length - 0.1, player.time + seconds));
+        }
+
+        public void ChangeVolume(float delta)
+        {
+            volume = Mathf.Clamp01(volume + delta);
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (live != null && livePicture) live.SetVolume(volume);
+#endif
+            if (audioOutput != null) audioOutput.volume = volume;
+        }
 
         private void Fail(string message, string detail)
         {
@@ -192,7 +247,12 @@ namespace DVR
             player = null;
             waiting = false;
             report = null;
-            if (picture != null) picture.enabled = false;
+            if (picture != null)
+            {
+                picture.enabled = false;
+                picture.rectTransform.sizeDelta = screenSize;
+                picture.texture = videoTexture;
+            }
             if (previous == null) return;
 
             audioOutput.mute = true;
@@ -206,6 +266,14 @@ namespace DVR
             audioOutput = null;
         }
 
+        private void OnApplicationPause(bool paused)
+        {
+            if (!paused || report == null) return;
+            var notify = report;
+            Stop();
+            notify("Playback stopped. Select the title to resume viewing.");
+        }
+
         private void OnDisable() => Stop();
 
         private void OnDestroy()
@@ -216,3 +284,4 @@ namespace DVR
         }
     }
 }
+

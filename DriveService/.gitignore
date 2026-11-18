@@ -1,0 +1,4 @@
+.env
+.env.pilot
+/data/
+/node_modules/
