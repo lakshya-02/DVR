@@ -32,7 +32,7 @@ public static partial class DvrBuild
 
     private static void MakeScreen(Transform station, Camera camera, DiscDeck.SceneLinks links)
     {
-        var screen = Place("Television", station, new Vector3(-0.30f, 0.06f, 3.02f));
+        var screen = Place("Television", station, new Vector3(0, 0.50f, 3.02f));
         links.screen = screen;
         var shell = Finish("Black lacquer", 0x212020, 0.19f, 0.27f);
         var brass = Finish("Brushed bronze", 0x9D714A, 0.42f, 0.37f);
@@ -53,23 +53,15 @@ public static partial class DvrBuild
 
     private static void MakeConsole(Transform station, Camera camera, DiscDeck.SceneLinks links)
     {
-        var console = Place("Projection console", station, new Vector3(0, -0.36f, 0.435f));
+        var console = Place("Projection shelf", station, new Vector3(0, -0.38f, 0.435f));
+        links.shelf = console;
         var wood = Finish("Walnut", 0xAA6842, 0.03f, 0.30f, Grain());
         var brass = Finish("Brushed bronze", 0x9D714A, 0.42f, 0.37f);
         var shell = Finish("Black lacquer", 0x212020, 0.19f, 0.27f);
         var graphite = Finish("Graphite", 0x3A3431, 0.11f, 0.20f);
         var felt = Finish("Rack cork", 0x443029, 0, 0.13f);
-        Profile(console, "Solid walnut lid", new Vector3(0, -0.089f, 0), new Vector3(0.94f, 0.067f, 0.51f), wood);
-        Profile(console, "Bronze seam", new Vector3(0, -0.115f, -0.001f), new Vector3(0.93f, 0.010f, 0.505f), brass);
-        Profile(console, "Console plinth", new Vector3(0, -0.173f, 0.017f), new Vector3(0.89f, 0.106f, 0.466f), graphite);
-        for (var i = -1; i <= 1; i += 2)
-        {
-            Profile(console, "Drawer face", new Vector3(i * 0.224f, -0.163f, -0.223f), new Vector3(0.428f, 0.077f, 0.026f), wood);
-            Profile(console, "Drawer pull", new Vector3(i * 0.224f, -0.151f, -0.244f), new Vector3(0.11f, 0.011f, 0.022f), brass);
-            var leg = Profile(console, "Tapered support", new Vector3(i * 0.362f, -0.385f, 0.01f),
-                new Vector3(0.063f, 0.39f, 0.32f), wood);
-            leg.localRotation = Quaternion.Euler(0, 0, 5 * i);
-        }
+        Profile(console, "Walnut shelf", new Vector3(0, -0.082f, 0), new Vector3(0.94f, 0.047f, 0.51f), wood);
+        Profile(console, "Bronze seam", new Vector3(0, -0.098f, -0.001f), new Vector3(0.93f, 0.009f, 0.505f), brass);
 
         var player = Place("Optical disc deck", console, new Vector3(0, 0, 0.064f));
         Profile(player, "Die-cast shell", new Vector3(0, 0.019f, 0.069f), new Vector3(0.346f, 0.128f, 0.293f), shell);
@@ -95,8 +87,9 @@ public static partial class DvrBuild
         links.reveal = MakeButton(face.transform, "Controls", 26, 4, 97, 54);
         links.eject = MakeButton(face.transform, "Eject", 111, 4, 69, 54);
         links.reveal.GetComponentInChildren<Text>().fontSize = 19;
-        links.eject.GetComponentInChildren<Text>().fontSize = 19;
-        QuickActionsAPI.AddRayCanvasInteraction(face.gameObject);
+        links.eject.GetComponentInChildren<Text>().fontSize = 20;
+        StyleEject(links.eject);
+        QuickActionsAPI.AddPokeCanvasInteraction(face.gameObject);
 
         links.mechanicalAudio = player.gameObject.AddComponent<AudioSource>();
         links.mechanicalAudio.clip = MechanicalClick();
@@ -157,63 +150,128 @@ public static partial class DvrBuild
 
     private static void MakePanel(Transform station, Camera camera, DiscDeck.SceneLinks links)
     {
-        var housing = Place("Source panel enclosure", station, new Vector3(1.24f, 0.005f, 1.30f));
-        housing.localRotation = Quaternion.Euler(0, 40f, 0);
-        Profile(housing, "Anodized edge", new Vector3(0, 0, 0.013f), new Vector3(0.462f, 0.591f, 0.023f),
+        var housing = Place("Disc and source panel", station, new Vector3(0, -0.599f, 1.22f));
+        Profile(housing, "Anodized edge", new Vector3(0, 0, 0.011f), new Vector3(1.061f, 0.253f, 0.017f),
             Finish("Brushed bronze", 0x9D714A, 0.42f, 0.37f));
-        Profile(housing, "Glass back", new Vector3(0, 0, 0.004f), new Vector3(0.451f, 0.582f, 0.019f),
-            Finish("Smoked glass", 0x221D1C, 0.10f, 0.60f));
-        var panel = MakeCanvas("Source controls", housing, camera, new Vector3(0, 0, -0.008f), new Vector2(442, 570), 0.001f);
+        var panel = MakeCanvas("Source controls", housing, camera, Vector3.zero, new Vector2(1056, 250), 0.001f);
         links.sourcePanel = housing.gameObject;
-        ImageAt(panel.transform, "Glass surface", 0, 0, 442, 570, new Color(0.09f, 0.071f, 0.061f, 0.79f));
-        ImageAt(panel.transform, "Reflected light", 0, 283, 428, 2, Hex(0x98715A));
-        ImageAt(panel.transform, "Title rule", 0, 182, 391, 2, Amber);
-        links.title = Label(panel.transform, "Disc library", 0, 218, 394, 57, 31, Paper, TextAnchor.MiddleLeft);
-        links.status = Label(panel.transform, "", 0, 128, 394, 88, 21, Paper, TextAnchor.MiddleLeft);
-        links.rows = new Button[5];
-        for (var i = 0; i < links.rows.Length; i++)
+        ImageAt(panel.transform, "Glass surface", 0, 0, 1056, 250, Hex(0x181B21));
+        ImageAt(panel.transform, "Identity edge", -176, 0, 2, 214, Hex(0x695141));
+        links.title = Label(panel.transform, "Disc library", -348, 87, 320, 42, 30, Paper, TextAnchor.MiddleLeft, emphasis: true);
+        links.status = Label(panel.transform, "", -348, -17, 320, 84, 22, Paper, TextAnchor.MiddleLeft);
+
+        var identity = ImageAt(panel.transform, "Google Drive account", -348, 40, 323, 52, Hex(0x263040));
+        links.driveIdentity = identity.gameObject;
+        var mark = Ui<RawImage>(identity.transform, "Official Google Drive logo", -136, 0, 37, 37);
+        mark.texture = AssetDatabase.LoadAssetAtPath<Texture2D>(Root + "/Media/GoogleDrive.png");
+        mark.raycastTarget = false;
+        if (mark.texture == null) throw new InvalidOperationException("Google Drive's official logo asset is missing.");
+        links.driveAccount = Label(identity.transform, "Google Drive", 23, 0, 271, 51, 19, Color.white, TextAnchor.MiddleLeft);
+        links.driveAccount.resizeTextForBestFit = true;
+        links.driveAccount.resizeTextMinSize = 16;
+        links.driveAccount.resizeTextMaxSize = 19;
+        links.driveIdentity.SetActive(false);
+
+        links.discButtons = new Button[links.discs.Length];
+        for (var i = 0; i < links.discs.Length; i++)
         {
-            var row = MakeButton(panel.transform, "", 0, 48 - i * 45, 394, 42);
-            var label = row.GetComponentInChildren<Text>();
-            label.alignment = TextAnchor.MiddleLeft;
-            label.rectTransform.sizeDelta = new Vector2(360, 39);
-            label.fontSize = 21;
-            links.rows[i] = row;
+            var index = i;
+            var media = System.Linq.Enumerable.Single(ChannelCatalog.Discs, item => item.Id == links.discs[index].catalogId);
+            links.discButtons[i] = MakeSourceTile(panel.transform, media.Name, i);
         }
 
-        links.previous = MakeButton(panel.transform, "Previous", -153, -197, 91, 46);
-        links.next = MakeButton(panel.transform, "Next", -51, -197, 91, 46);
-        links.random = MakeButton(panel.transform, "Random channel", 101, -197, 191, 46);
-        links.search = MakeButton(panel.transform, "Search", 51, -197, 91, 46);
-        links.back = MakeButton(panel.transform, "Settings", 153, -197, 91, 46);
-        links.netflix = MakeButton(panel.transform, "Open Netflix", -101, -252, 191, 47);
-        links.prime = MakeButton(panel.transform, "Open Prime Video", 101, -252, 191, 47);
-        links.qr = Ui<RawImage>(panel.transform, "Drive pairing QR", 61, -74, 149, 149);
+        links.rows = new Button[5];
+        for (var i = 0; i < links.rows.Length; i++)
+            links.rows[i] = MakeSourceTile(panel.transform, "", i);
+
+        links.previous = MakeButton(panel.transform, "Previous", -109, -94, 98, 48);
+        links.next = MakeButton(panel.transform, "Next", -2, -94, 98, 48);
+        links.random = MakeButton(panel.transform, "Random channel", 157, -94, 206, 48);
+        links.search = MakeButton(panel.transform, "Search", 105, -94, 98, 48);
+        links.back = MakeButton(panel.transform, "Settings", 218, -94, 112, 48);
+        links.driveLibrary = MakeButton(panel.transform, "Folders", 365, -94, 165, 48);
+        links.netflix = MakeButton(panel.transform, "Open Netflix", -431, -94, 153, 48);
+        links.prime = MakeButton(panel.transform, "Open Prime Video", -266, -94, 163, 48);
+        links.prime.GetComponentInChildren<Text>().fontSize = 19;
+        links.qr = Ui<RawImage>(panel.transform, "Drive pairing QR", 406, 4, 157, 157);
         links.qr.raycastTarget = false;
         links.qr.gameObject.SetActive(false);
+        UseControlOverlay(panel);
         QuickActionsAPI.AddRayCanvasInteraction(panel.gameObject);
+    }
+
+    private static Button MakeSourceTile(Transform panel, string label, int index)
+    {
+        var row = MakeButton(panel, label, 5 + 336 * (index % 2), 79 - (index / 2) * 55, 320, 48);
+        var text = row.GetComponentInChildren<Text>();
+        text.alignment = TextAnchor.MiddleLeft;
+        text.rectTransform.sizeDelta = new Vector2(283, 42);
+        text.fontSize = 24;
+        text.resizeTextForBestFit = true;
+        text.resizeTextMinSize = 19;
+        text.resizeTextMaxSize = 24;
+        return row;
     }
 
     private static void MakeControls(Transform station, Camera camera, DiscDeck.SceneLinks links)
     {
-        var controls = MakeCanvas("Session controls", station, camera, new Vector3(-0.12f, -0.645f, 1.20f),
-            new Vector2(968, 146), 0.001f);
-        ImageAt(controls.transform, "Control plate", 0, 0, 968, 146, Ink);
-        ImageAt(controls.transform, "Bronze edge", 0, 72, 968, 2, Amber);
-        links.footer = Label(controls.transform, "Grip a disc and place it on the tray.", -134, 46, 660, 32, 23, Paper, TextAnchor.MiddleLeft);
-        links.volumeLabel = Label(controls.transform, "100%", 323, 46, 83, 32, 21, Amber, TextAnchor.MiddleCenter);
-        links.panelEject = MakeButton(controls.transform, "Eject", 421, 46, 108, 40);
-        links.room = MakeButton(controls.transform, "Theater", -389, -17, 150, 58);
-        links.recenter = MakeButton(controls.transform, "Recenter", -230, -17, 143, 58);
-        links.move = MakeButton(controls.transform, "Move screen", -75, -17, 151, 58);
-        links.rewind = MakeButton(controls.transform, "−10s", 40, -17, 65, 58);
-        links.pause = MakeButton(controls.transform, "Pause / Play", 140, -17, 126, 58);
-        links.forward = MakeButton(controls.transform, "+10s", 240, -17, 65, 58);
-        links.quieter = MakeButton(controls.transform, "Vol −", 312, -17, 65, 58);
-        links.louder = MakeButton(controls.transform, "Vol +", 384, -17, 65, 58);
-        links.hide = MakeButton(controls.transform, "Hide", 448, -17, 53, 58);
-        links.hide.GetComponentInChildren<Text>().fontSize = 19;
+        var controls = MakeCanvas("Transport and room controls", station, camera, new Vector3(0, -0.39f, 1.22f),
+            new Vector2(1056, 148), 0.001f);
+        ImageAt(controls.transform, "Control plate", 0, 0, 1056, 148, new Color32(24, 27, 33, 220));
+        ImageAt(controls.transform, "Bronze edge", 0, 73, 1056, 2, Amber);
+        links.discLibrary = MakeButton(controls.transform, "Discs", -434, 36, 142, 54);
+        links.room = MakeButton(controls.transform, "Theater", -276, 36, 144, 54);
+        links.recenter = MakeButton(controls.transform, "Recenter", -118, 36, 144, 54);
+        links.move = MakeButton(controls.transform, "Screen position", 46, 36, 160, 54);
+        links.deckHeight = MakeButton(controls.transform, "Deck height", 205, 36, 143, 54);
+        links.hide = MakeButton(controls.transform, "Hide", 334, 36, 91, 54);
+        links.panelEject = MakeButton(controls.transform, "Eject", 448, 36, 115, 54);
+        StyleEject(links.panelEject);
+        links.move.GetComponentInChildren<Text>().fontSize = 21;
+        links.footer = Label(controls.transform, "Pick a disc with the ray or place it on the tray.", -275, -34, 451, 63, 21, Paper, TextAnchor.MiddleLeft);
+        links.rewind = MakeButton(controls.transform, "−10s", 3, -34, 83, 53);
+        links.pause = MakeButton(controls.transform, "Pause / Play", 112, -34, 113, 53);
+        links.pause.GetComponentInChildren<Text>().fontSize = 19;
+        links.forward = MakeButton(controls.transform, "+10s", 221, -34, 83, 53);
+        links.quieter = MakeButton(controls.transform, "Vol −", 325, -34, 83, 53);
+        links.volumeLabel = Label(controls.transform, "100%", 395, -34, 53, 48, 20, Paper, TextAnchor.MiddleCenter);
+        links.louder = MakeButton(controls.transform, "Vol +", 464, -34, 83, 53);
+        UseControlOverlay(controls);
         QuickActionsAPI.AddRayCanvasInteraction(controls.gameObject);
 
+        var restore = MakeCanvas("Restore controls", station, camera, new Vector3(0, -0.39f, 1.22f),
+            new Vector2(198, 55), 0.001f);
+        links.floatingReveal = MakeButton(restore.transform, "Show controls", 0, 0, 188, 53);
+        UseControlOverlay(restore);
+        QuickActionsAPI.AddRayCanvasInteraction(restore.gameObject);
+        restore.gameObject.SetActive(false);
+    }
+
+    private static void UseControlOverlay(Canvas canvas)
+    {
+        var path = AssetPath("Floating controls", "mat");
+        var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            var shader = AssetDatabase.LoadAssetAtPath<Shader>(Root + "/EditorSupport/VisibleControls.shader");
+            if (shader == null) throw new InvalidOperationException("Missing floating controls shader.");
+            material = new Material(shader) { name = "Floating controls" };
+            AssetDatabase.CreateAsset(material, path);
+        }
+
+        foreach (var graphic in canvas.GetComponentsInChildren<Graphic>(true))
+            graphic.material = material;
+    }
+
+    private static void StyleEject(Button button)
+    {
+        var colors = button.colors;
+        colors.normalColor = Hex(0xB6433E);
+        colors.highlightedColor = Hex(0xD85851);
+        colors.selectedColor = colors.highlightedColor;
+        colors.pressedColor = Hex(0x882E2A);
+        colors.disabledColor = Hex(0x2B2526);
+        button.colors = colors;
+        button.GetComponentInChildren<Text>().color = Color.white;
     }
 }

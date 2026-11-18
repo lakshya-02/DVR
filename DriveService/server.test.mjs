@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import test from 'node:test';
-import { createDriveServer, readConfig } from './server.mjs';
+import { countPairingAttempt, createDriveServer, readConfig } from './server.mjs';
 
 const settings = {
     origin: 'https://dvr.example.test', key: Buffer.alloc(32, 76), clientId: 'mock-client', clientSecret: 'mock-secret',
@@ -14,7 +14,20 @@ const settings = {
 const scope = 'https://www.googleapis.com/auth/drive.readonly';
 const refreshToken = 'mock refresh credential should never appear in device responses or on disk';
 const video = (id, name) => ({ id, name });
+const folderMime = 'application/vnd.google-apps.folder';
+const shortcutMime = 'application/vnd.google-apps.shortcut';
+const account = { displayName: 'Test <name>', emailAddress: 'viewer@example.test' };
 const pilotOrigin = 'http://127.0.0.1:48180';
+test('pairing quotas charge accepted attempts atomically and expire after one minute', () => {
+    const counters = new Map();
+    const charge = (client, now = 0) => countPairingAttempt(counters, 'create', client, 1, 2, now);
+    charge('first');
+    assert.throws(() => charge('first'), { status: 429 });
+    charge('second');
+    assert.throws(() => charge('third'), { status: 429 });
+    assert.equal(counters.has('create:ip:third'), false);
+    charge('first', 60_000);
+});
 const pilotEnv = { PUBLIC_ORIGIN: pilotOrigin, GOOGLE_CLIENT_ID: 'mock-client', GOOGLE_CLIENT_SECRET: 'mock-secret', STORAGE_KEY: settings.key.toString('base64') };
 
 async function fixture(t, database = ':memory:') {
@@ -46,9 +59,46 @@ async function fixture(t, database = ':memory:') {
         assert.equal(options.headers.Authorization, 'Bearer google-access-token');
         if (state.rejectAccess) return Response.json({}, { status: 401 });
         const q = url.searchParams;
+        if (url.pathname.endsWith('/about')) {
+            assert.equal(q.get('fields'), 'user(displayName,emailAddress)');
+            return Response.json({ user: { ...account, permissionId: 'ignored-private-id' }, storageQuota: {} });
+        }
         if (url.pathname.endsWith('/files')) {
             assert.equal(q.get('includeItemsFromAllDrives'), 'true');
             assert.equal(q.get('supportsAllDrives'), 'true');
+            if (q.get('fields').includes('shortcutDetails')) {
+                const filter = q.get('q');
+                if (filter.includes("'root' in parents")) {
+                    assert.equal(q.get('corpora'), 'user');
+                    return Response.json({ files: [{ id: 'nested', name: 'Nested', mimeType: folderMime }], nextPageToken: 'nested-page-2' });
+                }
+                if (filter.includes("'nested' in parents")) {
+                    return Response.json({ files: [{ id: 'movies', name: 'Movies', mimeType: folderMime, resourceKey: 'nested-key' }] });
+                }
+                if (filter.includes("'movies' in parents")) {
+                    assert.equal(options.headers['X-Goog-Drive-Resource-Keys'], 'movies/nested-key');
+                    return Response.json({ files: [
+                        { id: 'movie-file', name: 'Movie.mp4', mimeType: 'video/mp4' },
+                        { id: 'document', name: 'A document', mimeType: 'application/pdf' },
+                    ] });
+                }
+                if (filter.includes("'team-drive' in parents")) {
+                    assert.equal(q.get('corpora'), 'drive');
+                    assert.equal(q.get('driveId'), 'team-drive');
+                    return Response.json({ files: [{ id: 'team-folder', name: 'Team folder', mimeType: folderMime, driveId: 'team-drive' }] });
+                }
+                if (filter.includes('sharedWithMe = true')) {
+                    return Response.json({ files: [{ id: 'shared', name: 'Shared', mimeType: folderMime }] });
+                }
+                assert.ok(filter.includes("name contains 'Movies'"));
+                assert.equal(q.has('orderBy'), false);
+                return Response.json({ files: [
+                    { id: 'movies', name: 'Movies', mimeType: folderMime, resourceKey: 'nested-key' },
+                    { id: 'shortcut', name: 'Movies shortcut', mimeType: shortcutMime, driveId: 'not-target-drive', shortcutDetails: {
+                        targetId: 'movies', targetMimeType: folderMime, targetResourceKey: 'nested-key',
+                    } },
+                ] });
+            }
             assert.match(q.get('q'), /trashed = false and mimeType contains 'video\//);
             if (q.get('q').includes('name contains')) {
                 assert.ok(q.get('q').endsWith("name contains 'O\\'Brien\\\\Show'"));
@@ -61,7 +111,7 @@ async function fixture(t, database = ':memory:') {
             assert.equal(q.get('driveId'), 'team-drive');
             return Response.json({ files: [video('team-video', 'Team video')] });
         }
-        if (url.pathname.endsWith('/drives')) return Response.json({ drives: [{ id: 'team-drive' }] });
+        if (url.pathname.endsWith('/drives')) return Response.json({ drives: [{ id: 'team-drive', name: 'Team Drive' }] });
 
         if (url.pathname.endsWith('/not-video')) return Response.json({ mimeType: 'application/pdf', capabilities: { canDownload: true } });
         assert.ok(url.pathname.endsWith('/my-video'));
@@ -241,6 +291,42 @@ test('cancelling an in-progress consent retains encrypted revocation state until
     assert.equal((await drive.api('videos', pair.bearer)).status, 409);
     drive.state.failRevocation = false;
     assert.equal((await drive.api('session', pair.bearer, { method: 'DELETE' })).status, 204);
+});
+
+test('only a paired headset can read account identity and browse nested, shared and searched folders', async t => {
+    const drive = await fixture(t);
+    assert.equal((await drive.request('/v1/account')).status, 401);
+    const pair = await drive.begin();
+    assert.equal((await drive.api('account', pair.bearer)).status, 409);
+    assert.equal((await drive.callback(pair, pair.cookie)).status, 200);
+    const identity = await drive.api('account', pair.bearer);
+    assert.equal(identity.status, 200);
+    assert.equal(identity.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await identity.json(), account);
+    assert.equal((await drive.request('/v1/items?source=folder&parent=root')).status, 401);
+
+    const getItems = async params => {
+        const response = await drive.api(`items?${params}`, pair.bearer);
+        assert.equal(response.status, 200);
+        return response.json();
+    };
+    const list = await getItems('source=folder&parent=root&limit=1');
+    assert.deepEqual(list.files, [{ id: 'nested', kind: 'folder', mimeType: folderMime, name: 'Nested' }]);
+    assert.ok(list.nextCursor);
+    const cursor = `source=folder&parent=nested&limit=1&cursor=${list.nextCursor}`;
+    assert.equal((await drive.api(`items?${cursor}`, pair.bearer)).status, 400);
+    const nested = await getItems('source=folder&parent=nested');
+    assert.deepEqual(nested.files, [{ id: 'movies', kind: 'folder', mimeType: folderMime, name: 'Movies', resourceKey: 'nested-key' }]);
+    const search = await getItems('q=Movies');
+    assert.deepEqual(search.files[0], nested.files[0]);
+    assert.deepEqual(search.files[1], { ...nested.files[0], name: 'Movies shortcut' });
+    const movies = await getItems('source=folder&parent=movies&key=nested-key');
+    assert.deepEqual(movies.files, [{ id: 'movie-file', name: 'Movie.mp4', kind: 'video', mimeType: 'video/mp4' }]);
+    assert.equal((await getItems('source=shared')).files[0].id, 'shared');
+    assert.deepEqual((await getItems('source=drives')).files, [{ id: 'team-drive', name: 'Team Drive', kind: 'drive' }]);
+    assert.equal((await getItems('source=folder&parent=team-drive&drive=team-drive')).files[0].driveId, 'team-drive');
+    assert.equal((await drive.api('items?source=all&parent=movies', pair.bearer)).status, 400);
+    assert.equal((await drive.api('items?source=folder&parent=bad%27value', pair.bearer)).status, 400);
 });
 
 test('cleartext is available only in the explicit pilot mode on the fixed loopback origin', () => {

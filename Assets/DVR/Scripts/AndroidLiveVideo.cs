@@ -26,6 +26,7 @@ namespace DVR
         public Texture2D Texture { get; private set; }
         public float Aspect { get; private set; } = 16f / 9f;
         public bool Paused => paused;
+        public double PlaybackSeconds => media.Call<int>("getCurrentPosition") / 1000.0;
         public long DecodedFrames => session == IntPtr.Zero ? 0 : DvrPresentedFrames(session);
         public bool HasFrame => DecodedFrames > 0;
         public bool Ended => events.Ended;

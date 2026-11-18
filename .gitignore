@@ -135,8 +135,19 @@ crashlytics-build.properties
 /UIElementsSchema/
 
 # Machine-local HTTPS origin for Personal Google Drive.
-/Unity/Assets/Resources/DvrDriveSettings.json
-/Unity/Assets/Resources/DvrDriveSettings.json.meta
+/Assets/Resources/DvrDriveSettings.json
+/Assets/Resources/DvrDriveSettings.json.meta
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Local SDK settings, signing keys and companion credentials
+/Assets/Resources/DevAgentSettings.asset
+/Assets/Resources/DevAgentSettings.asset.meta
+*.keystore
+*.jks
+*.sqlite*
+.env.*
+!.env.example
+client_secret*.json
+/Assets/SceneDependencyCache*

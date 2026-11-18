@@ -73,6 +73,17 @@ public static partial class DvrBuild
 
     public static void Android()
     {
+        BuildAndroid(false);
+    }
+
+    public static void RebuildWiredPilot()
+    {
+        Assemble();
+        BuildAndroid(true);
+    }
+
+    private static void BuildAndroid(bool wiredPilot)
+    {
         if (!File.Exists(ScenePath)) Assemble();
         else ConfigureAndroid();
         var args = Environment.GetCommandLineArgs();
@@ -84,7 +95,8 @@ public static partial class DvrBuild
             scenes = new[] { ScenePath },
             locationPathName = output,
             target = BuildTarget.Android,
-            options = BuildOptions.Development
+            options = wiredPilot ? BuildOptions.Development : BuildOptions.None,
+            extraScriptingDefines = wiredPilot ? new[] { "DVR_WIRED_PILOT" } : Array.Empty<string>()
         });
         if (build.summary.result != BuildResult.Succeeded)
             throw new InvalidOperationException($"Android build {build.summary.result} ({build.summary.totalErrors} errors)");
@@ -283,13 +295,15 @@ public static partial class DvrBuild
         return image;
     }
 
-    private static Text Label(Transform parent, string text, float x, float y, float width, float height, int size, Color color, TextAnchor align)
+    private static Text Label(Transform parent, string text, float x, float y, float width, float height,
+        int size, Color color, TextAnchor align, bool emphasis = false)
     {
         var label = Ui<Text>(parent, text, x, y, width, height);
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        var weight = emphasis ? "Bold" : "Regular";
+        label.font = AssetDatabase.LoadAssetAtPath<Font>($"{Root}/Typography/AtkinsonHyperlegible-{weight}.ttf");
+        if (label.font == null) throw new InvalidOperationException($"Missing Atkinson Hyperlegible {weight} font.");
         label.text = text;
         label.fontSize = size;
-        label.fontStyle = FontStyle.Bold;
         label.color = color;
         label.alignment = align;
         label.raycastTarget = false;

@@ -17,6 +17,7 @@ namespace DVR
         private float deadline;
         private bool waiting;
         private bool movie;
+        private bool privateMedia;
         private float volume = 1f;
         private Vector2 screenSize;
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -25,6 +26,16 @@ namespace DVR
 #endif
 
         public bool HasDemo => demoClip != null;
+        internal double PlaybackSeconds
+        {
+            get
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                if (live != null) return livePicture ? live.PlaybackSeconds : 0;
+#endif
+                return player != null && player.isPrepared ? player.time : 0;
+            }
+        }
         internal bool HasPicture
         {
             get
@@ -68,6 +79,7 @@ namespace DVR
         {
             Stop();
             movie = isMovie;
+            privateMedia = !string.IsNullOrEmpty(bearer);
             report = onStatus;
             deadline = Time.realtimeSinceStartup + 20f;
             waiting = true;
@@ -231,7 +243,7 @@ namespace DVR
         {
             var callback = report;
             Stop();
-            Debug.LogWarning($"[DVR] {detail}");
+            Debug.LogWarning(privateMedia ? "[DVR] Private media playback failed." : $"[DVR] {detail}");
             callback?.Invoke(message);
         }
 

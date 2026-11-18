@@ -14,7 +14,7 @@ The Personal disc uses a companion service for Google sign-in, the Drive video l
 
 4. In the development APK, insert the Personal disc and press **Connect Google Drive**. Open `http://127.0.0.1:48180/pair` in the browser on that same PC, enter the headset code and continue with Google. When approval finishes, return to the headset to select a video.
 
-A development Android build defaults to this wired address when it has no origin file. Keep the USB cable connected while browsing and playing. The service listens only on `127.0.0.1:48180`, and its `/health` endpoint reports `{"ok":true,"mode":"wired-pilot"}` once it has started. Sign in to Google to confirm your account's access. Running the pilot does not require a public domain, hosting account or tunnel.
+Only the explicitly selected `DvrBuild.RebuildWiredPilot` build defaults to this address. Use it on a trusted development headset and PC. Android apps share the loopback interface, and the USB pilot uses HTTP. Use the default HTTPS build for distribution. Keep the USB cable connected while browsing and playing. The service listens only on `127.0.0.1:48180`, and its `/health` endpoint reports `{"ok":true,"mode":"wired-pilot"}` once it has started. Sign in to Google to confirm your account's access. Running the pilot does not require a public domain, hosting account or tunnel.
 
 ## Configure Google Cloud
 
@@ -37,11 +37,11 @@ dvr.example.com {
 }
 ```
 
-Keep `HOST=127.0.0.1` and `TRUST_PROXY=1` for that setup. The proxy must overwrite `X-Real-IP`, forward `Authorization` and `Range`, and stream video responses. Leave request and response caching and logging disabled for this origin, or redact authorization headers, query strings and response bodies. Confirm `https://dvr.example.com/health` returns `{"ok":true}`.
+Keep `HOST=127.0.0.1` and `TRUST_PROXY=1` for that setup. The proxy must overwrite `X-Real-IP`, forward `Authorization` and `Range`, and stream video responses. Leave request and response caching and logging disabled for this origin, or omit media paths, file IDs, query strings, authorization headers and all request and response bodies from logs. Confirm `https://dvr.example.com/health` returns `{"ok":true}`.
 
 ## Enable the hosted service on Quest
 
-Before building DVR, create `Unity/Assets/Resources/DvrDriveSettings.json` containing the same HTTPS origin:
+Before building DVR, create `Assets/Resources/DvrDriveSettings.json` containing the same HTTPS origin:
 
 ```json
 {"origin":"https://dvr.example.com"}
@@ -49,7 +49,9 @@ Before building DVR, create `Unity/Assets/Resources/DvrDriveSettings.json` conta
 
 Build and sideload DVR, then insert the Personal disc and select **Connect Google Drive**. Scan the displayed QR or open the displayed URL on a phone and enter the code. Verify the code and continue with Google. After consenting, return to the headset and choose a video. [Build instructions](../AGENTS.md)
 
-Use Previous and Next to page through results and Search to enter a filename prefix. The list includes My Drive, items shared with your account and files from Shared Drives you can access. A directly shared file can also appear in its Shared Drive. A file must allow downloads and use a codec supported by the headset. DVR streams the original file and does not transcode it.
+The Personal panel displays your signed-in Google name and email. **Library** lists videos across Drive. Choose **Folders** to open My Drive, Shared with me or Shared drives, then select a folder to browse its contents. **Search** finds folders and videos across your Drive, including folders nested several levels deep. **Back** returns to the parent folder or previous search. Use **Previous** and **Next** to page through results.
+
+A directly shared file can also appear in its Shared Drive. A video must allow downloads and use a codec supported by the headset. DVR streams the original file.
 
 Open the Drive settings on the Personal panel and choose **Disconnect Google Drive** to stop playback, revoke the Google grant and remove the local device session. Google's revocation can affect other device sessions connected through the same OAuth client and Google account. If Google cannot process the revocation immediately, the service blocks playback and offers a retry. You can also remove DVR from [your Google Account connections](https://myaccount.google.com/connections).
 

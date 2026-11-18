@@ -28,10 +28,11 @@ namespace DVR
                 using var cipher = Cipher(2, SignedBytes(Convert.FromBase64String(encoded[0])));
                 return Encoding.UTF8.GetString(Bytes(cipher.Call<sbyte[]>("doFinal", SignedBytes(Convert.FromBase64String(encoded[1])))));
             }
-            catch (Exception error) when (error is AndroidJavaException || error is FormatException || error is IndexOutOfRangeException)
+            catch (Exception error) when (error is FormatException || error is IndexOutOfRangeException)
             {
                 Delete();
             }
+            catch (Exception error) when (error is AndroidJavaException || error is InvalidOperationException) { }
 #endif
             return null;
         }
@@ -48,10 +49,7 @@ namespace DVR
                 PlayerPrefs.Save();
                 return true;
             }
-            catch (AndroidJavaException)
-            {
-                Delete();
-            }
+            catch (Exception error) when (error is AndroidJavaException || error is InvalidOperationException) { }
 #endif
             return false;
         }
@@ -70,6 +68,7 @@ namespace DVR
             using var keyStore = keyStoreType.CallStatic<AndroidJavaObject>("getInstance", "AndroidKeyStore");
             var load = AndroidJNI.GetMethodID(keyStore.GetRawClass(), "load", "(Ljava/io/InputStream;[C)V");
             AndroidJNI.CallVoidMethod(keyStore.GetRawObject(), load, new jvalue[2]);
+            CheckKeystoreException();
 
             if (!keyStore.Call<bool>("containsAlias", alias))
             {
@@ -84,7 +83,7 @@ namespace DVR
                 using var generatedKey = generator.Call<AndroidJavaObject>("generateKey");
             }
 
-            using var key = keyStore.Call<AndroidJavaObject>("getKey", alias, Array.Empty<char>());
+            using var key = LoadKey(keyStore, alias);
             using var cipherType = new AndroidJavaClass("javax.crypto.Cipher");
             var cipher = cipherType.CallStatic<AndroidJavaObject>("getInstance", "AES/GCM/NoPadding");
             try
@@ -103,6 +102,34 @@ namespace DVR
                 cipher.Dispose();
                 throw;
             }
+        }
+
+        private static AndroidJavaObject LoadKey(AndroidJavaObject keyStore, string alias)
+        {
+            AndroidJNI.PushLocalFrame(2);
+            try
+            {
+                var method = AndroidJNI.GetMethodID(keyStore.GetRawClass(), "getKey", "(Ljava/lang/String;[C)Ljava/security/Key;");
+                var args = new jvalue[2];
+                args[0].l = AndroidJNI.NewStringUTF(alias);
+                var value = AndroidJNI.CallObjectMethod(keyStore.GetRawObject(), method, args);
+                CheckKeystoreException();
+                if (value == IntPtr.Zero) throw new InvalidOperationException("No Android Keystore key.");
+                return new AndroidJavaObject(value);
+            }
+            finally
+            {
+                AndroidJNI.PopLocalFrame(IntPtr.Zero);
+            }
+        }
+
+        private static void CheckKeystoreException()
+        {
+            var error = AndroidJNI.ExceptionOccurred();
+            if (error == IntPtr.Zero) return;
+            AndroidJNI.ExceptionClear();
+            AndroidJNI.DeleteLocalRef(error);
+            throw new InvalidOperationException("Android Keystore is unavailable.");
         }
 
         private static sbyte[] SignedBytes(byte[] bytes)

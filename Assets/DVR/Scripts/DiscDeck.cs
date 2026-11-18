@@ -28,14 +28,14 @@ namespace DVR
         [Serializable]
         public sealed class SceneLinks
         {
-            public Transform head, leftController, rightController, station, slot, screen;
-            public GameObject sourcePanel;
+            public Transform head, leftController, rightController, station, slot, screen, shelf;
+            public GameObject sourcePanel, driveIdentity;
             public DiscObject[] discs;
-            public Button[] rows;
+            public Button[] rows, discButtons;
             public Button previous, next, search, back, random, eject, panelEject;
-            public Button room, recenter, move, hide, reveal, netflix, prime;
+            public Button room, recenter, move, deckHeight, hide, reveal, floatingReveal, netflix, prime, discLibrary, driveLibrary;
             public Button pause, rewind, forward, quieter, louder;
-            public Text title, status, footer, screenStatus, volumeLabel;
+            public Text title, status, footer, screenStatus, volumeLabel, driveAccount;
             public RawImage qr;
             public Image readyLight;
             public Television television;
@@ -53,7 +53,9 @@ namespace DVR
         private bool placed;
         private bool theaterMode;
         private bool controlsVisible = true;
-        private bool movingScreen;
+        private enum Adjustment { None, Screen, Deck }
+        private Adjustment adjustment;
+        private bool showingLibrary = true;
         private bool hadPicture;
         private Vector2 screenOffset;
         private uint handoffRequest;
@@ -91,8 +93,17 @@ namespace DVR
                 scene.rows[i].onClick.AddListener(() => SelectRow(index));
             }
 
-            scene.personal.Initialize(Television, scene.title, scene.status, rowLabels, scene.qr);
+            for (var i = 0; i < scene.discButtons.Length; i++)
+            {
+                var index = i;
+                scene.discButtons[i].onClick.AddListener(() => SelectDisc(index));
+            }
+
+            scene.personal.Initialize(Television, scene.title, scene.status, rowLabels, scene.qr, scene.driveAccount);
             scene.personal.BindNavigation(scene.previous, scene.next, scene.search, scene.back);
+            scene.personal.BindLibraryButton(scene.driveLibrary);
+            scene.driveLibrary.onClick.AddListener(() => scene.personal.ToggleLibrary());
+            scene.discLibrary.onClick.AddListener(ToggleDiscLibrary);
             scene.previous.onClick.AddListener(() => StepPage(-1));
             scene.next.onClick.AddListener(() => StepPage(1));
             scene.search.onClick.AddListener(() => scene.personal.Search());
@@ -102,9 +113,11 @@ namespace DVR
             scene.panelEject.onClick.AddListener(Eject);
             scene.recenter.onClick.AddListener(Recenter);
             scene.room.onClick.AddListener(ToggleTheater);
-            scene.move.onClick.AddListener(ToggleMove);
+            scene.move.onClick.AddListener(() => SetAdjustment(Adjustment.Screen));
+            scene.deckHeight.onClick.AddListener(() => SetAdjustment(Adjustment.Deck));
             scene.hide.onClick.AddListener(ToggleControls);
             scene.reveal.onClick.AddListener(ToggleControls);
+            scene.floatingReveal.onClick.AddListener(ToggleControls);
             scene.netflix.onClick.AddListener(() => OpenService("Netflix", "https://www.netflix.com/"));
             scene.prime.onClick.AddListener(() => OpenService("Prime Video", "https://www.primevideo.com/"));
             scene.pause.onClick.AddListener(() => Television.TogglePause());
@@ -128,16 +141,11 @@ namespace DVR
                 ToggleControls();
             if (OVRInput.GetDown(OVRInput.RawButton.X, OVRInput.Controller.LTouch) && HeadReady())
                 Recenter();
-            if (movingScreen)
+            if (adjustment != Adjustment.None)
             {
-                var stick = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
-                if (stick.sqrMagnitude > 0.04f)
-                {
-                    screenOffset += stick * (Time.unscaledDeltaTime * 0.40f);
-                    screenOffset.x = Mathf.Clamp(screenOffset.x, -0.43f, 0.28f);
-                    screenOffset.y = Mathf.Clamp(screenOffset.y, -0.32f, 0.32f);
-                    PositionScreen();
-                }
+                var left = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
+                var right = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch);
+                AdjustPose(left.sqrMagnitude >= right.sqrMagnitude ? left : right);
             }
 
             var playing = Television.HasPicture;
@@ -223,8 +231,7 @@ namespace DVR
 
         public void Recenter()
         {
-            foreach (var disc in scene.discs)
-                if (disc.pointers.Count > 0) return;
+            if (AnyDiscHeld()) return;
 
             var forward = Vector3.ProjectOnPlane(scene.head.forward, Vector3.up);
             if (forward.sqrMagnitude < 0.01f)
@@ -233,7 +240,7 @@ namespace DVR
             scene.station.SetPositionAndRotation(scene.head.position, Quaternion.LookRotation(forward, Vector3.up));
             foreach (var disc in scene.discs)
                 Park(disc, loaded == disc ? scene.slot : disc.home);
-            screenOffset = Vector2.zero;
+            screenOffset.x = 0;
             PositionScreen();
             placed = true;
             scene.station.gameObject.SetActive(true);
@@ -242,7 +249,7 @@ namespace DVR
 
         private void PositionScreen()
         {
-            var center = new Vector3(-0.30f, 0.06f, 3.02f);
+            var center = new Vector3(0, 0.50f, 3.02f);
             var scale = (theaterMode ? 4f : 3f) / 1.04f;
             scene.screen.localPosition = center + new Vector3(screenOffset.x, screenOffset.y, 0);
             scene.screen.localScale = new Vector3(scale, scale, 1f);
@@ -252,25 +259,86 @@ namespace DVR
         {
             theaterMode = !theaterMode;
             Label(scene.room).text = theaterMode ? "Lounge" : "Theater";
-            screenOffset = Vector2.zero;
             PositionScreen();
             Debug.Log($"[DVR] {(theaterMode ? "Theater" : "Lounge")}");
         }
 
-        private void ToggleMove()
+        private void AdjustPose(Vector2 stick)
         {
-            movingScreen = !movingScreen;
-            Label(scene.move).text = movingScreen ? "Done moving" : "Move screen";
-            scene.footer.text = movingScreen ? "Use the left thumbstick to position the screen." : FooterText();
+            if (stick.sqrMagnitude < 0.04f) return;
+            var movement = stick * (Time.unscaledDeltaTime * 0.32f);
+            if (adjustment == Adjustment.Screen)
+            {
+                screenOffset += movement;
+                screenOffset.x = Mathf.Clamp(screenOffset.x, -0.52f, 0.52f);
+                screenOffset.y = Mathf.Clamp(screenOffset.y, -0.12f, 0.20f);
+                PositionScreen();
+            }
+            else if (!AnyDiscHeld())
+            {
+                var position = scene.shelf.localPosition;
+                position.y = Mathf.Clamp(position.y + movement.y, -0.92f, -0.32f);
+                scene.shelf.localPosition = position;
+                foreach (var disc in scene.discs) Park(disc, loaded == disc ? scene.slot : disc.home);
+            }
+        }
+
+        private bool AnyDiscHeld()
+        {
+            foreach (var disc in scene.discs)
+                if (disc.pointers.Count > 0) return true;
+            return false;
+        }
+
+        private void SetAdjustment(Adjustment target)
+        {
+            adjustment = adjustment == target ? Adjustment.None : target;
+            Label(scene.move).text = adjustment == Adjustment.Screen ? "Done moving" : "Screen position";
+            Label(scene.deckHeight).text = adjustment == Adjustment.Deck ? "Done adjusting" : "Deck height";
+            scene.footer.text = adjustment switch
+            {
+                Adjustment.Screen => "Move screen with the thumbstick.",
+                Adjustment.Deck => "Raise or lower deck with the thumbstick.",
+                _ => FooterText()
+            };
         }
 
         private void ToggleControls()
         {
-            if (movingScreen) ToggleMove();
+            SetAdjustment(Adjustment.None);
             controlsVisible = !controlsVisible;
             scene.hide.transform.parent.gameObject.SetActive(controlsVisible);
             scene.sourcePanel.SetActive(controlsVisible);
+            scene.floatingReveal.transform.parent.gameObject.SetActive(!controlsVisible);
             if (!controlsVisible) scene.screenStatus.enabled = false;
+        }
+
+        private void ToggleDiscLibrary()
+        {
+            if (loaded == null) return;
+            showingLibrary = !showingLibrary;
+            if (showingLibrary && IsPersonal) scene.personal.Hide();
+            RefreshPanel();
+        }
+
+        private void SelectDisc(int index)
+        {
+            if (!showingLibrary) return;
+            var disc = scene.discs[index];
+            if (disc.pointers.Count > 0)
+            {
+                scene.status.text = "Release the disc before loading it.";
+                return;
+            }
+
+            if (loaded == disc)
+            {
+                ToggleDiscLibrary();
+                return;
+            }
+
+            if (loaded != null) Eject();
+            Insert(disc);
         }
 
         private void Insert(DiscObject disc)
@@ -279,6 +347,7 @@ namespace DVR
 
             handoffRequest++;
             loaded = disc;
+            showingLibrary = false;
             foreach (var interaction in disc.interactions) interaction.SetActive(false);
             StartCoroutine(SeatDisc(disc));
             Feedback(disc.hand);
@@ -316,12 +385,14 @@ namespace DVR
             Television.Stop();
             hadPicture = false;
             loaded = null;
+            showingLibrary = true;
             selected = -1;
             page = 0;
             Park(disc, disc.home);
             foreach (var interaction in disc.interactions) interaction.SetActive(true);
             Feedback(disc.hand);
             RefreshPanel();
+            if (!controlsVisible) ToggleControls();
             Debug.Log($"[DVR] Disc ejected {disc.media.Id}");
         }
 
@@ -342,31 +413,38 @@ namespace DVR
 
         private void RefreshPanel()
         {
+            var browse = showingLibrary;
+            var personal = IsPersonal && !browse;
+            var live = IsLive && !browse;
             scene.footer.text = FooterText();
-            scene.title.text = loaded?.media.Name ?? "Disc library";
-            scene.status.text = loaded == null ? "Insert a disc, or open an official streaming service."
-                : IsFilm ? "Film" : IsPersonal ? "Google Drive" : loaded.media.Channels.Count == 0 ? "No channels are available." : "Select a live channel.";
-            scene.screenStatus.text = loaded == null ? "Insert a disc" : scene.title.text;
+            scene.title.text = browse ? "Disc library" : loaded.media.Name;
+            scene.status.text = browse ? "Choose a disc with the ray, or place it in the tray."
+                : IsFilm ? "Film" : personal ? "Google Drive" : loaded.media.Channels.Count == 0 ? "No channels are available." : "Select a live channel.";
+            scene.screenStatus.text = loaded == null ? "Insert a disc" : loaded.media.Name;
+            Label(scene.discLibrary).text = browse && loaded != null ? "Back to disc" : "Discs";
+            scene.discLibrary.interactable = loaded != null;
             scene.eject.interactable = loaded != null;
             scene.panelEject.interactable = loaded != null;
-            scene.previous.gameObject.SetActive(IsLive || IsPersonal);
-            scene.next.gameObject.SetActive(IsLive || IsPersonal);
-            scene.search.gameObject.SetActive(IsPersonal);
-            scene.back.gameObject.SetActive(IsPersonal);
+            scene.previous.gameObject.SetActive(live || personal);
+            scene.next.gameObject.SetActive(live || personal);
+            scene.search.gameObject.SetActive(personal);
+            scene.back.gameObject.SetActive(personal);
             scene.previous.interactable = true;
             scene.next.interactable = true;
-            scene.random.gameObject.SetActive(IsLive);
-            scene.netflix.gameObject.SetActive(loaded == null || IsPersonal);
-            scene.prime.gameObject.SetActive(loaded == null || IsPersonal);
-            for (var i = 0; i < scene.rows.Length; i++)
-                scene.rows[i].gameObject.SetActive(IsPersonal);
+            scene.random.gameObject.SetActive(live);
+            scene.netflix.gameObject.SetActive(personal);
+            scene.prime.gameObject.SetActive(personal);
+            scene.driveIdentity.SetActive(personal);
+            scene.driveLibrary.gameObject.SetActive(personal);
+            foreach (var button in scene.discButtons) button.gameObject.SetActive(browse);
+            foreach (var row in scene.rows) row.gameObject.SetActive(personal);
 
-            if (IsLive) DisplayChannelPage();
-            if (IsFilm) SetRow(0, "Play from beginning");
-            if (IsPersonal) scene.personal.Show();
+            if (live) DisplayChannelPage();
+            if (!browse && IsFilm) SetRow(0, "Play from beginning");
+            if (personal) scene.personal.Show();
         }
 
-        private string FooterText() => loaded == null ? "Grip a disc and place it on the tray." : $"{loaded.media.Name}  •  Loaded";
+        private string FooterText() => loaded == null ? "X Recenter   ·   B / Y Controls" : $"{loaded.media.Name}  •  Loaded";
 
         private void DisplayChannelPage()
         {
@@ -444,7 +522,7 @@ namespace DVR
 
         private void ShowPlaybackStatus(string item, string message)
         {
-            scene.status.text = $"{item}\n{message}";
+            if (!showingLibrary) scene.status.text = $"{item}\n{message}";
             scene.screenStatus.text = $"{item}\n{message}";
         }
 

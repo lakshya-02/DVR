@@ -2,7 +2,7 @@
 
 ## Film discs
 
-**Big Buck Bunny** (2008) · © copyright 2008, Blender Foundation / www.bigbuckbunny.org. Creative Commons Attribution 3.0 Unported. `Unity/Assets/DVR/Media/OfflineDemo.mp4` is a 1280 × 720 H.264/AAC transcode of the studio’s complete 720p release. It keeps the film and its original credits and converts the audio to stereo. [Film and attribution](https://peach.blender.org/about/) · [Official source ZIP](https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_720p_h264.mov.zip) · [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
+**Big Buck Bunny** (2008) · © copyright 2008, Blender Foundation / www.bigbuckbunny.org. Creative Commons Attribution 3.0 Unported. `Assets/DVR/Media/OfflineDemo.mp4` is a 1280 × 720 H.264/AAC transcode of the studio’s complete 720p release. It keeps the film and its original credits and converts the audio to stereo. [Film and attribution](https://peach.blender.org/about/) · [Official source ZIP](https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_720p_h264.mov.zip) · [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
 
 **Sita Sings the Blues** (2008) · Nina Paley, writer and director. English-language animated feature, 81 minutes 31 seconds. The disc streams the complete, unchanged 480p H.264/AAC MP4 that Paley links from her official viewing page. Her CC0 dedication applies to the rights she holds. The license page identifies more restricted underlying music and permits hearing it in the context of the original film. The original audio stays inside the film, which is streamed from the Archive release. [Official viewing page](https://www.sitasingstheblues.com/watch.html) · [Film and soundtrack terms](https://www.sitasingstheblues.com/license.html) · [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) · [Archive release](https://archive.org/details/Sita_Sings_the_Blues)
 
@@ -26,3 +26,11 @@ The NIC masters link to their media playlists with scheme-relative URLs. DVR use
 - Big Buck Bunny is 596.462 seconds, H.264 Main at 1280 × 720 with two-channel AAC LC. FFmpeg decoded both tracks in full. The bundled MP4 is 74,809,624 bytes with SHA-256 `8C9371A7A64B765B681517978FAF33E33E31942FBDE7A088D2551B564BBC741D`.
 - The exact Sita Sings the Blues stream returned 848 × 480 H.264 Constrained Baseline video and two-channel AAC LC. FFmpeg decoded audio and video at 0:00, 43:20 and 81:20.
 - FFmpeg decoded audio and video from six unauthenticated HTTPS HLS URLs above. Samples showed the named broadcaster or a program listed by that broadcaster. Live programming and availability can change.
+
+## Provider marks
+
+Google Drive’s product mark is displayed in the Personal account badge to identify the connected Google service. Google supplied the original PNG and DVR embeds it unchanged. [Official Google Drive PNG](https://www.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png) · [Google brand guidance](https://about.google/brand-resource-center/).
+
+## Typography
+
+Atkinson Hyperlegible Regular and Bold by the Braille Institute of America are bundled under the SIL Open Font License 1.1. [Font source and license](https://github.com/google/fonts/tree/main/ofl/atkinsonhyperlegible).

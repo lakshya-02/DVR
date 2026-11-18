@@ -13,6 +13,8 @@ const authorize = 'https://accounts.google.com/o/oauth2/v2/auth';
 const tokenUrl = 'https://oauth2.googleapis.com/token';
 const revokeUrl = 'https://oauth2.googleapis.com/revoke';
 const driveUrl = 'https://www.googleapis.com/drive/v3/';
+const folderMime = 'application/vnd.google-apps.folder';
+const shortcutMime = 'application/vnd.google-apps.shortcut';
 const codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const opaque = /^[A-Za-z0-9_-]{43}$/;
 const fileId = /^[A-Za-z0-9_-]{1,256}$/;
@@ -113,6 +115,21 @@ export function readConfig(env, pilot = false) {
     };
 }
 
+export function countPairingAttempt(attempts, key, ip, perIp, total, now = Date.now()) {
+    for (const [bucket, value] of attempts) if (value.until <= now) attempts.delete(bucket);
+    function nextCount(bucket, maximum) {
+        const value = attempts.get(bucket) ?? { until: now + 60_000, count: 0 };
+        if (value.count >= maximum) throw new HttpError(429, 'Too many attempts. Try again in a minute.');
+        return { until: value.until, count: value.count + 1 };
+    }
+    const globalKey = `${key}:global`;
+    const clientKey = `${key}:ip:${ip}`;
+    const globalNext = nextCount(globalKey, total);
+    const clientNext = nextCount(clientKey, perIp);
+    attempts.set(globalKey, globalNext);
+    attempts.set(clientKey, clientNext);
+}
+
 export function createDriveServer(settings, google = fetch) {
     if (settings.database !== ':memory:') mkdirSync(dirname(settings.database), { recursive: true, mode: 0o700 });
     const db = new DatabaseSync(settings.database);
@@ -135,17 +152,8 @@ export function createDriveServer(settings, google = fetch) {
     };
 
     function limit(req, key, perIp, total) {
-        const now = Date.now();
-        for (const [bucket, value] of attempts) if (value.until <= now) attempts.delete(bucket);
         const ip = settings.trustProxy ? req.headers['x-real-ip'] || req.socket.remoteAddress : req.socket.remoteAddress;
-        function count(bucket, maximum) {
-            const value = attempts.get(bucket) ?? { until: now + 60_000, count: 0 };
-            if (value.count >= maximum) throw new HttpError(429, 'Too many attempts. Try again in a minute.');
-            value.count++;
-            attempts.set(bucket, value);
-        }
-        count(`${key}:global`, total);
-        count(`${key}:ip:${ip}`, perIp);
+        countPairingAttempt(attempts, key, ip, perIp, total);
     }
 
     function session(req) {
@@ -226,7 +234,9 @@ export function createDriveServer(settings, google = fetch) {
             const cache = access.get(row.id);
             const token = await pending;
             confirmConnected(row.id);
-            const result = await googleJson(url, { headers: { Authorization: `Bearer ${token}`, ...extra } });
+            const result = await googleJson(url, {
+                headers: { Authorization: `Bearer ${token}`, ...extra }, signal: AbortSignal.timeout(40_000),
+            });
             if (result.response.status === 401 && access.get(row.id) === cache) access.delete(row.id);
             return result;
         }
@@ -240,34 +250,85 @@ export function createDriveServer(settings, google = fetch) {
         return data;
     }
 
-    async function listVideos(res, row, params) {
+    async function account(res, row) {
+        requireConnected(row);
+        const result = await driveJson(new URL('about?fields=user(displayName,emailAddress)', driveUrl), row);
+        confirmConnected(row.id);
+        const { displayName, emailAddress } = result.user ?? {};
+        json(res, 200, { displayName: displayName ?? '', emailAddress: emailAddress ?? '' });
+    }
+
+    function browserItem(item) {
+        const shortcut = item.mimeType === shortcutMime ? item.shortcutDetails : null;
+        const mimeType = shortcut?.targetMimeType ?? item.mimeType;
+        const kind = mimeType === folderMime ? 'folder' : mimeType?.startsWith('video/') ? 'video' : '';
+        const id = shortcut?.targetId ?? item.id;
+        if (!kind || !fileId.test(id ?? '')) return null;
+        return {
+            id, kind, mimeType, name: item.name,
+            resourceKey: shortcut?.targetResourceKey ?? item.resourceKey,
+            driveId: shortcut ? undefined : item.driveId,
+        };
+    }
+
+    async function listDriveItems(res, row, params, videosOnly) {
         requireConnected(row);
         const search = (params.get('q') ?? '').trim();
         const count = Number(params.get('limit') ?? 6);
         const cursor = params.get('cursor');
-        if (search.length > 120 || !Number.isInteger(count) || count < 1 || count > 30) {
+        const source = videosOnly ? 'all' : params.get('source') ?? 'all';
+        const parent = params.get('parent') ?? '';
+        const drive = params.get('drive') ?? '';
+        const key = params.get('key') ?? '';
+        if (search.length > 120 || !Number.isInteger(count) || count < 1 || count > 30
+            || !['all', 'shared', 'drives', 'folder'].includes(source)
+            || (source === 'folder' ? !fileId.test(parent) || (drive && !fileId.test(drive)) || (key && !fileId.test(key))
+                : parent || drive || key) || (source === 'drives' && search)) {
             throw new HttpError(400, 'Invalid Drive list request.');
         }
-        let position = { corpus: 'user' };
+        const cursorContext = JSON.stringify([videosOnly, source, parent, drive, key, search, count]);
+        let position = drive ? { corpus: 'drive', id: drive } : { corpus: 'user' };
         if (cursor) {
             try {
                 if (cursor.length > 8192) throw new Error();
                 position = JSON.parse(Buffer.from(cursor.split('.')[0], 'base64url').toString('utf8'));
-                if (cursor !== encodeCursor(row.id, search, position)) throw new Error();
+                if (cursor !== encodeCursor(row.id, cursorContext, position)) throw new Error();
             } catch {
                 throw new HttpError(400, 'Refresh the Drive list and try again.');
             }
         }
 
-        const query = [`trashed = false`, `mimeType contains 'video/'`];
-        if (search) query.push(`name contains '${search.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`);
+        if (source === 'drives') {
+            const list = new URL('drives', driveUrl);
+            list.search = new URLSearchParams({ pageSize: String(count), fields: 'drives(id,name),nextPageToken' });
+            if (position.page) list.searchParams.set('pageToken', position.page);
+            const result = await driveJson(list, row);
+            confirmConnected(row.id);
+            const files = (result.drives ?? []).map(item => ({ id: item.id, name: item.name, kind: 'drive' }));
+            const nextCursor = result.nextPageToken ? encodeCursor(row.id, cursorContext, { page: result.nextPageToken }) : '';
+            return json(res, 200, { files, nextCursor });
+        }
+
+        const types = videosOnly ? "mimeType contains 'video/'"
+            : `(mimeType contains 'video/' or mimeType = '${folderMime}' or mimeType = '${shortcutMime}')`;
+        const query = ['trashed = false', types];
+        if (source === 'folder') query.push(`'${parent}' in parents`);
+        if (source === 'shared') query.push('sharedWithMe = true');
+        if (search) {
+            const escaped = search.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+            query.push(`name contains '${escaped}'`);
+        }
+        const headers = key ? { 'X-Goog-Drive-Resource-Keys': `${parent}/${key}` } : {};
         let files = [];
         for (let step = 0; step < 6 && position && files.length === 0; step++) {
             if (position.corpus === 'drives') {
                 const list = new URL('drives', driveUrl);
                 list.search = new URLSearchParams({ pageSize: '1', fields: 'drives(id),nextPageToken' });
                 if (position.nextDrive) list.searchParams.set('pageToken', position.nextDrive);
-                const result = await driveJson(list, row);
+                const result = await driveJson(list, row).catch(error => {
+                    if (error instanceof HttpError && error.status === 404) return {};
+                    throw error;
+                });
                 const id = result.drives?.[0]?.id;
                 position = id ? { corpus: 'drive', id, nextDrive: result.nextPageToken }
                     : result.nextPageToken ? { corpus: 'drives', nextDrive: result.nextPageToken } : null;
@@ -279,22 +340,23 @@ export function createDriveServer(settings, google = fetch) {
                 corpora: position.corpus,
                 q: query.join(' and '),
                 pageSize: String(count),
-                fields: 'files(id,name,resourceKey),nextPageToken',
-                orderBy: 'name_natural',
+                fields: videosOnly ? 'files(id,name,resourceKey),nextPageToken'
+                    : 'files(id,name,mimeType,resourceKey,driveId,shortcutDetails(targetId,targetMimeType,targetResourceKey)),nextPageToken',
                 supportsAllDrives: 'true',
                 includeItemsFromAllDrives: 'true',
             });
+            if (source === 'folder') list.searchParams.set('orderBy', 'folder,name_natural');
             if (position.id) list.searchParams.set('driveId', position.id);
             if (position.page) list.searchParams.set('pageToken', position.page);
-            const result = await driveJson(list, row);
-            files = result.files ?? [];
+            const result = await driveJson(list, row, headers);
+            files = videosOnly ? result.files ?? [] : (result.files ?? []).map(browserItem).filter(Boolean);
             if (result.nextPageToken) position.page = result.nextPageToken;
-            else if (position.corpus === 'user' || position.nextDrive) {
+            else if (source === 'all' && (position.corpus === 'user' || position.nextDrive)) {
                 position = { corpus: 'drives', nextDrive: position.nextDrive };
             } else position = null;
         }
         confirmConnected(row.id);
-        json(res, 200, { files, nextCursor: position ? encodeCursor(row.id, search, position) : '' });
+        json(res, 200, { files, nextCursor: position ? encodeCursor(row.id, cursorContext, position) : '' });
     }
 
     async function media(req, res, row, id, key) {
@@ -464,7 +526,9 @@ export function createDriveServer(settings, google = fetch) {
             db.prepare('DELETE FROM sessions WHERE id = ?').run(row.id);
             return res.writeHead(204).end();
         }
-        if (path === '/v1/videos' && method === 'GET') return listVideos(res, session(req), url.searchParams);
+        if (path === '/v1/account' && method === 'GET') return account(res, session(req));
+        if (path === '/v1/videos' && method === 'GET') return listDriveItems(res, session(req), url.searchParams, true);
+        if (path === '/v1/items' && method === 'GET') return listDriveItems(res, session(req), url.searchParams, false);
         if (path.startsWith('/v1/media/') && (method === 'GET' || method === 'HEAD')) {
             return media(req, res, session(req), path.slice('/v1/media/'.length), url.searchParams.get('key'));
         }

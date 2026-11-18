@@ -4,6 +4,7 @@ using System.Collections;
 using System.IO;
 using Oculus.Interaction;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace DVR
 {
@@ -13,19 +14,48 @@ namespace DVR
 
         private void RunRequestedDeviceProbe()
         {
-            using var launcher = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
-            using var activity = launcher.GetStatic<AndroidJavaObject>("currentActivity");
-            using var intent = activity.Call<AndroidJavaObject>("getIntent");
-            if (intent == null) return;
+            try
+            {
+                using var launcher = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+                using var activity = launcher.GetStatic<AndroidJavaObject>("currentActivity");
+                using var intent = activity.Call<AndroidJavaObject>("getIntent");
+                if (intent == null) return;
 
-            var openService = intent.Call<string>("getStringExtra", "dvr_open");
-            var preview = intent.Call<string>("getStringExtra", "dvr_preview");
-            if (openService == "netflix" || openService == "prime")
-                StartCoroutine(ProbeHandoff(openService));
-            else if (preview == "offline" || preview == "news" || preview == "sports" || preview == "personal")
-                StartCoroutine(PreviewSource(preview));
-            else if (intent.Call<bool>("getBooleanExtra", "dvr_probe", false))
-                StartCoroutine(DeviceProbe(intent.Call<bool>("getBooleanExtra", "dvr_capture", false)));
+                var openService = intent.Call<string>("getStringExtra", "dvr_open");
+                var preview = intent.Call<string>("getStringExtra", "dvr_preview");
+                var folder = intent.Call<string>("getStringExtra", "dvr_drive_check");
+                var handoff = openService == "netflix" || openService == "prime";
+                var showPreview = preview == "offline" || preview == "news" || preview == "sports" || preview == "personal";
+                var checkDrive = !string.IsNullOrWhiteSpace(folder) && folder.Length <= 100;
+                var probe = intent.Call<bool>("getBooleanExtra", "dvr_probe", false);
+                if (!handoff && !showPreview && !checkDrive && !probe) return;
+
+                using var files = activity.Call<AndroidJavaObject>("getFilesDir");
+                using var permit = new AndroidJavaObject("java.io.File", files, "dvr-diagnostics-once");
+                if (!permit.Call<bool>("delete")) return;
+
+                if (handoff) StartCoroutine(ProbeHandoff(openService));
+                else if (showPreview) StartCoroutine(PreviewSource(preview));
+                else if (checkDrive) StartCoroutine(ProbeDriveLibrary(folder));
+                else StartCoroutine(DeviceProbe(intent.Call<bool>("getBooleanExtra", "dvr_capture", false)));
+            }
+            catch (AndroidJavaException)
+            {
+                Debug.LogWarning("[DVR] Optional diagnostics could not be started");
+            }
+        }
+
+        private IEnumerator ProbeDriveLibrary(string name)
+        {
+            yield return Until(() => placed, 90);
+            if (!ProbeCheck(placed, "Drive station placed")) yield break;
+            yield return null;
+            var disc = Array.Find(scene.discs, entry => entry.catalogId == "personal");
+            if (!ProbeCheck(disc != null, "personal disc present")) yield break;
+            yield return ReleaseOnTray(disc);
+            if (!ProbeCheck(loaded == disc, "personal disc inserted")) yield break;
+            yield return scene.personal.VerifyLibrary(name);
+            Eject();
         }
 
         private IEnumerator ProbeHandoff(string service)
@@ -74,6 +104,8 @@ namespace DVR
             var live = Array.Find(scene.discs, disc => disc.media.Channels.Count > 0);
             if (!ProbeCheck(offline != null && personal != null && live != null, "offline, personal and live source discs present"))
                 yield break;
+
+            yield return ProbeRayTransport(live);
 
             yield return ReleaseOnTray(live);
             if (!ProbeCheck(loaded == live && !Television.HasPicture, "live disc inserted with blank screen")) yield break;
@@ -175,6 +207,64 @@ namespace DVR
                 yield return CaptureStereoscopicEyes();
 
             Debug.Log($"[DVR probe] Complete ({probeFailures} failed). Offline picture active {Television.HasPicture}.");
+        }
+
+        private IEnumerator ProbeRayTransport(DiscObject live)
+        {
+            var seated = new Vector3(-0.18f, -0.30f, 0.14f);
+            var standing = new Vector3(0.18f, -0.23f, 0.18f);
+            var libraryReachable = Array.TrueForAll(scene.discButtons, tile =>
+                TryControlRay(tile, seated, out _, out _) && TryControlRay(tile, standing, out _, out _));
+            ProbeCheck(libraryReachable, "every library tile within both fixed controller reach envelopes");
+            var transport = new[] { scene.recenter, scene.move, scene.deckHeight, scene.rewind, scene.pause, scene.forward, scene.panelEject };
+            ProbeCheck(Array.TrueForAll(transport, tile =>
+                TryControlRay(tile, seated, out _, out _) && TryControlRay(tile, standing, out _, out _)),
+                "transport, eject and calibration within both fixed controller reach envelopes");
+            var rail = scene.panelEject.GetComponentInParent<Canvas>();
+            var corners = new Vector3[4];
+            ((RectTransform)rail.transform).GetWorldCorners(corners);
+            var top = scene.station.InverseTransformPoint(corners[1]);
+            var minimumTheater = (0.50f - 0.12f - 0.585f * (4f / 1.04f) / 2f) / 3.02f;
+            ProbeCheck(top.y / top.z < minimumTheater, "transport stays below the lowest allowed theater picture");
+
+            var index = Array.IndexOf(scene.discs, live);
+            yield return ClickControlRay(scene.discButtons[index], seated);
+            ProbeCheck(loaded == live && !Television.HasPicture, "Meta ray click loaded a disc without physical reach");
+            yield return ClickControlRay(scene.panelEject, standing);
+            ProbeCheck(loaded == null && !Television.HasPicture, "Meta ray click ejected the disc");
+            if (loaded != null) Eject();
+        }
+
+        private bool TryControlRay(Button button, Vector3 localOrigin, out PointableCanvas input, out Pose hitPose)
+        {
+            var target = scene.station.InverseTransformPoint(button.transform.position);
+            var ray = new Ray(scene.station.TransformPoint(localOrigin), scene.station.TransformDirection(target - localOrigin));
+            var canvas = button.GetComponentInParent<Canvas>();
+            input = canvas.GetComponentInChildren<PointableCanvas>();
+            hitPose = default;
+            if (input == null || Mathf.Abs(Mathf.Atan2(target.x, target.z) * Mathf.Rad2Deg) > 26
+                || Mathf.Abs(Mathf.Atan2(target.y, target.z) * Mathf.Rad2Deg) > 33)
+                return false;
+
+            var surface = input.GetComponent<RayInteractable>();
+            if (surface == null || !surface.Raycast(ray, out var hit, 3f, false)) return false;
+            hitPose = new Pose(hit.Point, Quaternion.LookRotation(ray.direction));
+            return true;
+        }
+
+        private IEnumerator ClickControlRay(Button button, Vector3 localOrigin)
+        {
+            const int pointer = -121;
+            if (!TryControlRay(button, localOrigin, out var input, out var hit)) yield break;
+            input.ProcessPointerEvent(new PointerEvent(pointer, PointerEventType.Hover, hit));
+            yield return null;
+            input.ProcessPointerEvent(new PointerEvent(pointer, PointerEventType.Select, hit));
+            yield return null;
+            input.ProcessPointerEvent(new PointerEvent(pointer, PointerEventType.Unselect, hit));
+            yield return null;
+            if (input.isActiveAndEnabled)
+                input.ProcessPointerEvent(new PointerEvent(pointer, PointerEventType.Unhover, hit));
+            yield return null;
         }
 
         private IEnumerator CaptureStereoscopicEyes()

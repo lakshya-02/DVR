@@ -65,7 +65,7 @@ if (!$AdbPath) {
     $AdbPath = (Get-Command adb.exe -ErrorAction SilentlyContinue).Source
 }
 if (!$AdbPath) {
-    $versionFile = Join-Path $PSScriptRoot '../Unity/ProjectSettings/ProjectVersion.txt'
+    $versionFile = Join-Path $PSScriptRoot '../ProjectSettings/ProjectVersion.txt'
     $unityVersion = [regex]::Match((Get-Content -LiteralPath $versionFile -Raw), '(?m)^m_EditorVersion: (\S+)').Groups[1].Value
     $AdbPath = Join-Path $env:ProgramFiles "Unity/Hub/Editor/$unityVersion/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe"
 }
